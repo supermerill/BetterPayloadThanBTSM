@@ -13,7 +13,10 @@ namespace BetterPayload
 		//is delivered?
 		[KSPField(isPersistant = true)]
 		public bool isDelivered = false;
-
+		
+		[KSPField(isPersistant = true)]
+		public bool isDecouple = false;
+		
 		// part direction which should see the main body
 		// can be up, forward, right, -up, -forward, -right
 		[KSPField(isPersistant = true)]
@@ -28,8 +31,6 @@ namespace BetterPayload
 		public BaseField btsmIsDeliveredField;
 		public BaseField btsmIsInvalidatedField;
 
-		//active these on delivery
-		private List<ModuleDecouple> decouplers;
 		private List<Animation> antennasAnims;
 
 		//payload attitude control
@@ -58,10 +59,6 @@ namespace BetterPayload
 				Fields["deliverPayloadButton"].guiActiveEditor = false;
 				Fields["deliverPayloadButton"].uiControlEditor.controlEnabled = false;
 			}
-			else
-			{
-				Fields["deliverPayloadButton"].guiActive = true;
-			}
 
 			antennasAnims = new List<Animation>();
 			foreach (Animation animation in part.FindModelAnimators())
@@ -71,7 +68,6 @@ namespace BetterPayload
 				antennasAnims.Add(animation);
 			}
 
-			decouplers = new List<ModuleDecouple>();
 			foreach (PartModule pm in part.Modules)
 			{
 				if (pm.moduleName.Equals("BTSMModuleCommercialPayload"))
@@ -83,21 +79,13 @@ namespace BetterPayload
 					btsmIsDeliveredField = pm.Fields["isDelivered"];
 					btsmIsInvalidatedField = pm.Fields["isInvalidated"];
 				}
-				else if (pm is ModuleDecouple)
-				{
-					ModuleDecouple decoupler = (ModuleDecouple)pm;
-					decoupler.Events["Decouple"].guiActive = false;
-					decoupler.Actions["DecoupleAction"].active = false;
-					decouplers.Add(decoupler);
-				}
-
 			}
 
 			if (isDelivered)
 			{
 				Fields["deliverPayloadButton"].guiActive = false;
 				DeployementState = State.InService;
-				stateGui = "Delivered";
+				//stateGui = "Delivered";
 				//deploy things
 				int i = 0;
 				foreach (Animation anim in antennasAnims)
@@ -109,9 +97,8 @@ namespace BetterPayload
 			else
 			{
 				DeployementState = State.NotControlled;
-				stateGui = "Not delivered";
+				//stateGui = "Not delivered";
 			}
-
 		}
 
 		public Vector3 getVesselUp(){
@@ -133,33 +120,33 @@ namespace BetterPayload
 		}
 
 		// using a KSPField instead of KSPEvent as fields can be active on uncontrollable vessels
-		[KSPField(isPersistant = false, guiActive = true, guiActiveEditor = false, guiName = "Deliver"), UI_Toggle(disabledText = "", enabledText = "")]
+		[KSPField(isPersistant = false, guiActive = false, guiActiveEditor = false, guiName = "Deliver"), UI_Toggle(disabledText = "", enabledText = "")]
 		public bool deliverPayloadButton = false;
 
-		//TODO: use the btsm-one
-		// using a KSPField instead of KSPEvent as fields can be active on uncontrollable vessels
-		[KSPField(isPersistant = false, guiActive = true, guiActiveEditor = false, guiName = "state")]
-		public string stateGui = "idle";
-
+		////TODO: use the btsm-one
+		//// using a KSPField instead of KSPEvent as fields can be active on uncontrollable vessels
+		//[KSPField(isPersistant = false, guiActive = true, guiActiveEditor = false, guiName = "state")]
+		//public string stateGui = "idle";
 
 		public override void OnUpdate()
 		{
 			base.OnUpdate();
+
 			//has btsm think it's ok for delivering?
-			if (btsmDeliverPayloadField.guiActive)
+			if (btsmDeliverPayloadField.guiActive && !isDelivered)
 			{
 				//set the payload as "invalid" => let me take control of it.
 				btsmIsDeliveredField.SetValue(true, btsmIsDeliveredField.host);
 				btsmIsInvalidatedField.SetValue(true, btsmIsDeliveredField.host);
 				btsmDeliverPayloadField.guiActive = false;
 				Fields["deliverPayloadButton"].guiActive = true;
+				Events["decouplePayload"].guiActive = true;
 			}
 
 			switch (this.DeployementState)
 			{
 				case State.KillVelocity:
-				// kill velocity before moving to the target body
-					if (part.rigidbody.angularVelocity.magnitude > 0.02)
+					if (part.rigidbody.angularVelocity.magnitude > 0.05)
 					{
 						//kill a part of the velocity
 						part.rigidbody.AddTorque(-part.rigidbody.angularVelocity*2);
@@ -172,7 +159,7 @@ namespace BetterPayload
 						this.move = Vector3d.Cross(getVesselUp(), moveTo).normalized;
 						this.part.rigidbody.AddTorque(move * 0.5, ForceMode.VelocityChange);
 						this.maxTimeToMove = vessel.missionTime + 6;
-						if (!isDelivered) stateGui = "Targeting";
+						if (!isDelivered) btsmStatusField.SetValue("Targeting", btsmStatusField.host);
 					}
 					break;
 				case State.MoveToTarget:
@@ -190,7 +177,7 @@ namespace BetterPayload
 						this.part.rigidbody.AddTorque(move * 0.1, ForceMode.VelocityChange);
 						this.maxTimeToMove = vessel.missionTime + 3;
 
-						if (!isDelivered) stateGui = "Deploying";
+						if (!isDelivered) btsmStatusField.SetValue("Deploying", btsmStatusField.host);
 
 						//deploy antennas (if not already done)
 						if (!isDelivered)
@@ -239,7 +226,6 @@ namespace BetterPayload
 							btsmDeliverPayloadField.SetValue(true, btsmDeliverPayloadField.host);
 						}
 						isDelivered = true;
-						stateGui = "Delivered";
 						Fields["deliverPayloadButton"].guiActive = false;
 					}
 					if (Vector3.Dot(getVesselUp(), moveTo) < 0.98)
@@ -272,29 +258,34 @@ namespace BetterPayload
 		public void deployPayload()
 		{
 			this.DeployementState = State.KillVelocity;
-			stateGui = "Stopping rotation";
+			btsmStatusField.SetValue("Stopping rotation", btsmStatusField.host);
 
 			//remove button
 			Fields["deliverPayloadButton"].guiActive = false;
 
-			// remove autopilot => if decouple, not useful
-			// vessel.Autopilot.sas.manualoverride(true);
-			// vessel.autopilot.Disable();
+			decouplePayload();
+		}
 
-			//make vessel incrontrolable => if decouple, not useful
-			//foreach (ModuleCommand mc in moduleCommand)
-			//{
-			//	mc.minimumCrew = 666;
-			//}
-
-			if (!isDelivered)
+		[KSPEvent(guiActive = false, guiActiveEditor = false, guiName = "Decouple")]
+		public void decouplePayload()
+		{
+			Events["decouplePayload"].guiActive = false;
+			if (!isDecouple)
 			{
-				foreach (ModuleDecouple decoupler in decouplers)
+				//disconnect from "root"
+				part.decouple(1);
+				bool hasOtherNode = false;
+
+				//disconect other from me
+				foreach (AttachNode node in part.attachNodes)
 				{
-					decoupler.Events["Decouple"].Invoke();
+					Part otherPart = node.attachedPart;
+					if (otherPart != null)
+					{
+						otherPart.decouple(1);
+					}
 				}
 			}
 		}
-
 	}
 }
