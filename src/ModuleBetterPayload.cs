@@ -9,33 +9,34 @@ namespace BetterPayload
 {
 	public class ModuleBetterPayload : PartModule
 	{
-		//todo: like the stock contract
 
 		//is delivered?
 		[KSPField(isPersistant = true)]
 		public bool isDelivered = false;
 
+		// part direction which should see the main body
+		// can be up, forward, right, -up, -forward, -right
 		[KSPField(isPersistant = true)]
 		public string direction = "up";
 
+		//btsm integration
 		public PartModule btsmComPayload;
 		public BaseField btsmDeliverPayloadField;
+		public BaseField btsmStatusField;
 		//these two are for hiding btsm "deliver" button. 
 		//Because btsm classes aren't public, i need to make some nasty tricks
 		public BaseField btsmIsDeliveredField;
 		public BaseField btsmIsInvalidatedField;
 
-		public BaseField btsmStatusField;
-		
-		//List<ModuleCommand> moduleCommand;
+		//active these on delivery
 		private List<ModuleDecouple> decouplers;
-
 		private List<Animation> antennasAnims;
 
+		//payload attitude control
 		public State DeployementState = State.NotControlled;
-		private double maxTimeToMove = 0;
-		private Vector3d move = Vector3d.zero;
-		private Vector3d moveTo = Vector3d.zero;
+		public double maxTimeToMove = 0;
+		public Vector3d move = Vector3d.zero;
+		public Vector3d moveTo = Vector3d.zero;
 
 		public enum State
 		{
@@ -52,7 +53,6 @@ namespace BetterPayload
 
 			if (state == StartState.Editor)
 			{
-				//print("BetterPayload Start: disable!");
 				Fields["deliverPayloadButton"].guiName = "error";
 				Fields["deliverPayloadButton"].guiActive = false;
 				Fields["deliverPayloadButton"].guiActiveEditor = false;
@@ -60,43 +60,26 @@ namespace BetterPayload
 			}
 			else
 			{
-				//print("BetterPayload Start: enable!");
 				Fields["deliverPayloadButton"].guiActive = true;
 			}
 
 			antennasAnims = new List<Animation>();
-			//int numAnim = 0;
 			foreach (Animation animation in part.FindModelAnimators())
 			{
-				//print("BetterPayload Find animation : " + animation.name);
-				//if (animation.name == "antenna")
-				//{
-				//	//animation.name = "antenna" + numAnim;
-				//	antennasAnims.Add(animation);
-				//	//numAnim++;
-				//}
+				//stop animation (without the partmodule companion, the mts play its animation at startup)
 				animation.Stop();
 				antennasAnims.Add(animation);
-
 			}
 
 			decouplers = new List<ModuleDecouple>();
 			foreach (PartModule pm in part.Modules)
 			{
-				//print("BetterPayload pm " + pm.moduleName);
 				if (pm.moduleName.Equals("BTSMModuleCommercialPayload"))
 				{
-					//print("BetterPayload FIND BTSMModuleCommercialPayload");
+					//get btsm field
 					btsmComPayload = pm;
-					//print("BetterPayload FIND pm.Fields = " + pm.Fields.Count);
-					for (int i = 0; i < pm.Fields.Count; i++)
-					{
-						//print("BetterPayload pm.Field " + pm.Fields[i].name);
-					}
 					btsmDeliverPayloadField = pm.Fields["deliverPayloadDepressed"];
-					//print("BetterPayload btsmComPayloadField " + btsmDeliverPayloadField.guiActive);
 					btsmStatusField = pm.Fields["payloadStatus"];
-					//print("BetterPayload btsmStatusField " + btsmStatusField.guiActive);
 					btsmIsDeliveredField = pm.Fields["isDelivered"];
 					btsmIsInvalidatedField = pm.Fields["isInvalidated"];
 				}
@@ -110,22 +93,8 @@ namespace BetterPayload
 
 			}
 
-			//moduleCommand = new List<ModuleCommand>();
-			//foreach (Part aPart in vessel.Parts)
-			//{
-			//	foreach (PartModule pm in aPart.Modules)
-			//	{
-			//		if (pm.moduleName.Equals("ModuleCommand"))
-			//		{
-			//			//print("BetterPayload ModuleCommand " + pm.part.name);
-			//			moduleCommand.Add((ModuleCommand)pm);
-			//		}
-			//	}
-			//}
-
 			if (isDelivered)
 			{
-				//print("start: Delivered!");
 				Fields["deliverPayloadButton"].guiActive = false;
 				DeployementState = State.InService;
 				stateGui = "Delivered";
@@ -167,6 +136,7 @@ namespace BetterPayload
 		[KSPField(isPersistant = false, guiActive = true, guiActiveEditor = false, guiName = "Deliver"), UI_Toggle(disabledText = "", enabledText = "")]
 		public bool deliverPayloadButton = false;
 
+		//TODO: use the btsm-one
 		// using a KSPField instead of KSPEvent as fields can be active on uncontrollable vessels
 		[KSPField(isPersistant = false, guiActive = true, guiActiveEditor = false, guiName = "state")]
 		public string stateGui = "idle";
@@ -178,60 +148,46 @@ namespace BetterPayload
 			//has btsm think it's ok for delivering?
 			if (btsmDeliverPayloadField.guiActive)
 			{
-				//print("BetterPayload btsmDeliverPayloadField ACTIVE!!!!");
-				//set the payload as "invalide" => let me take control of it.
+				//set the payload as "invalid" => let me take control of it.
 				btsmIsDeliveredField.SetValue(true, btsmIsDeliveredField.host);
 				btsmIsInvalidatedField.SetValue(true, btsmIsDeliveredField.host);
 				btsmDeliverPayloadField.guiActive = false;
 				Fields["deliverPayloadButton"].guiActive = true;
 			}
-			//{
-			//	int i = 0;
-			//	foreach (Animation anim in antennasAnims)
-			//	{
-			//		if (i == 0)
-			//		{
-			//			//print("anim: " + anim.isPlaying + ", " + anim.IsPlaying(anim.name) +", "
-			//				+ anim.enabled);
-			//		}
-			//		anim.Play();
-			//		i++;
-			//	}
-			//}
 
 			switch (this.DeployementState)
 			{
 				case State.KillVelocity:
+				// kill velocity before moving to the target body
 					if (part.rigidbody.angularVelocity.magnitude > 0.02)
 					{
-						//print("BetterPayload KIllvelocity");
+						//kill a part of the velocity
 						part.rigidbody.AddTorque(-part.rigidbody.angularVelocity*2);
 					}
 					else
 					{
-						//print("BetterPayload velocity killed");
+						//velocity killed : init MoveToTaget
 						this.DeployementState = State.MoveToTarget;
 						this.moveTo = (vessel.mainBody.position - vessel.findWorldCenterOfMass()).normalized;
 						this.move = Vector3d.Cross(getVesselUp(), moveTo).normalized;
 						this.part.rigidbody.AddTorque(move * 0.5, ForceMode.VelocityChange);
-						//print("BetterPayload move to from " + vessel.missionTime);
 						this.maxTimeToMove = vessel.missionTime + 6;
 						if (!isDelivered) stateGui = "Targeting";
 					}
 					break;
 				case State.MoveToTarget:
-					//print("BetterPayload MoveToTarget " + vessel.missionTime + " =>" + maxTimeToMove);
+				// It's moving quickly to the right direction
 					if (Vector3.Dot(getVesselUp(), moveTo) > 0.98)
 					{
-						//print("BetterPayload MoveToTarget ok " + Vector3.Dot(getVesselUp(), moveTo));
+						//direction almost good : stop
 						part.rigidbody.AddTorque(move * -0.5f, ForceMode.VelocityChange);
 						move = Vector3d.zero;
 
+						//init FinalApproch
 						this.DeployementState = State.FinalApproch;
 						this.moveTo = (vessel.mainBody.position - vessel.findWorldCenterOfMass()).normalized;
 						this.move = Vector3d.Cross(getVesselUp(), moveTo).normalized;
 						this.part.rigidbody.AddTorque(move * 0.1, ForceMode.VelocityChange);
-						//print("BetterPayload move to from " + vessel.missionTime);
 						this.maxTimeToMove = vessel.missionTime + 3;
 
 						if (!isDelivered) stateGui = "Deploying";
@@ -249,30 +205,31 @@ namespace BetterPayload
 					}
 					else if (maxTimeToMove < vessel.missionTime)
 					{
-						//print("BetterPayload Fail to move, retry");
+						// can't face the body on time: someone push me => restart.
 						this.DeployementState = State.KillVelocity;
 					}
 					break;
 				case State.FinalApproch:
-					//print("BetterPayload FinalApproch at " + vessel.missionTime + " =>" + maxTimeToMove);
+				// moving slowly to the exact direction
 					if (Vector3.Dot(getVesselUp(), moveTo) > 0.995)
 					{
-						//print("BetterPayload FinalApproch end! " + Vector3.Dot(getVesselUp(), moveTo));
+						//right direction : stop rotation
 						part.rigidbody.AddTorque(move * -0.1, ForceMode.VelocityChange);
 						move = Vector3d.zero;
 						this.DeployementState = State.InService;
 					}
 					else if (maxTimeToMove < vessel.missionTime)
 					{
-						//print("BetterPayload Fail FinalApproch to move, retry");
+						// can't face the body on time: someone push me => restart.
 						this.DeployementState = State.KillVelocity;
 					}
 					break;
 				case State.InService:
+				// facing the right direction : do not move
+				//TODO: should turn slowly at the same time/rate we rotate the body.
 					if (!isDelivered)
 					{
-						//print("BetterPayload drifted! deliver!");
-						//set "ok"
+						// first time right facing : deliver the payload (award  btsm contract)
 						if (btsmDeliverPayloadField != null)
 						{
 							//re-put the payload in "valid" state
@@ -287,22 +244,23 @@ namespace BetterPayload
 					}
 					if (Vector3.Dot(getVesselUp(), moveTo) < 0.98)
 					{
-						//print("BetterPayload drifted! re-move");
+						// we're not facing the body anymore ( pushed by other? normal rotation shift?)
+						// => init FinalApproch for slow re-turn
 						this.moveTo = (vessel.mainBody.position - vessel.findWorldCenterOfMass()).normalized;
 						this.move = Vector3d.Cross(getVesselUp(), moveTo).normalized;
 						this.part.rigidbody.AddTorque(move * 0.1, ForceMode.VelocityChange);
-						//print("BetterPayload move to from " + vessel.missionTime);
 						this.maxTimeToMove = vessel.missionTime + 10;
 						this.DeployementState = State.FinalApproch;
 					}
 					else if (part.rigidbody.angularVelocity.magnitude > 0.005)
 					{
-						//print("BetterPayload drift correction: "+part.rigidbody.angularVelocity.magnitude);
+						//kill remaining rotation
 						part.rigidbody.AddTorque(-part.rigidbody.angularVelocity);
 					}
 					break;
 			}
 
+			//push the deliver button?
 			if (deliverPayloadButton)
 			{
 				deliverPayloadButton = false;
@@ -313,23 +271,15 @@ namespace BetterPayload
 		//start the deploy sequence
 		public void deployPayload()
 		{
-			//print("BetterPayload : deploy called " + direction);
 			this.DeployementState = State.KillVelocity;
 			stateGui = "Stopping rotation";
 
 			//remove button
 			Fields["deliverPayloadButton"].guiActive = false;
 
-			//print("BetterPayload Autopilot " + vessel.Autopilot.SAS + "," + vessel.Autopilot.RSAS);
-			//vessel.Autopilot.RSAS.UnsetTarget();
-			//vessel.Autopilot.RSAS.Terminate();
-			//vessel.Autopilot.SAS.DisconnectFlyByWire();
-			vessel.Autopilot.SAS.ManualOverride(true);
-			//vessel.Autopilot.SAS.Destroy();
-			vessel.Autopilot.Disable();
-			//vessel.Autopilot.SetupModules();
-			//vessel.Autopilot.Update();
-			//print("BetterPayload Autopilot " + vessel.Autopilot.SAS + "," + vessel.Autopilot.RSAS);
+			// remove autopilot => if decouple, not useful
+			// vessel.Autopilot.sas.manualoverride(true);
+			// vessel.autopilot.Disable();
 
 			//make vessel incrontrolable => if decouple, not useful
 			//foreach (ModuleCommand mc in moduleCommand)
