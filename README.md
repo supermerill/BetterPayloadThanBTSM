@@ -2,10 +2,12 @@
 (For KSPv0.90, waiting for the new amazing btsm for v1.0.x)
 
 This plug-in is about sexier payloads for btsm.  
-It changes the small, medium and big payload by satellite-looking equivalent. 
-When a payload is delivered, it point toward the body and deploy his antennas.
+It changes the small, medium and big payload by satellite-looking equivalent.  
+When a payload is delivered, it point toward the body and deploy his antennas.  
 I add a payload adapter to allow the launch of multiple small/medium payload.  
 
+http://imgur.com/a/8tdAo#0
+![Screenshot](http://i.imgur.com/Er8yBYB.png)
 ##### When delivered:
  - The payload decouple itself from whatever you put under it. You can decouple it yourself before Deliver it. The ejection force is negligible.
  - the payload rotate to face the main body. 
