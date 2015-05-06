@@ -1,3 +1,5 @@
+## WILL NOT BE RELEASED - NO SUPPORT
+as requested by FlowerChild
 ### Better Payload Than BTSM 
 (For KSPv0.90, waiting for the new amazing btsm for v1.0.x)
 
